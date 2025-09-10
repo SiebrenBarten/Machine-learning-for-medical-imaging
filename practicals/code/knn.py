@@ -30,5 +30,8 @@ class KNN:
             raise ValueError("The shape of the distance matrix is incorrect.")
         return dists
     
+def test_function():
+    print("This is a test function from knn.py")
+    
 
     
