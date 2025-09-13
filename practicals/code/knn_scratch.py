@@ -40,7 +40,6 @@ class KNN:
     
     def row_topk_indices(self, D, k):
         """Return indices of k smallest per row, sorted by distance."""
-        # Use argpartition (O(n)) then sort the k selected
         idx_part = np.argpartition(D, kth=k-1, axis=1)[:, :k]      # (n_test, k)
         rows = np.arange(D.shape[0])[:, None]
         d_small = D[rows, idx_part]
@@ -48,7 +47,7 @@ class KNN:
         idx_sorted = idx_part[rows, order_in_k]
         return idx_sorted
 
-    # --------------------- voting & predict ---------------------
+    # --------------------- voting & predict (classificatie) ---------------------
     def vote_majority(self, neigh_labels):
         """neigh_labels: (n_test, k) -> (n_test,)"""
         n = neigh_labels.shape[0]
@@ -68,9 +67,8 @@ class KNN:
             k = self.k
 
         D = self.eucl_dist_matrix(X_test, self.X_train)          # (n_test, n_train)
-        idx = self.row_topk_indices(D, k)                       # (n_test, k)
+        idx = self.row_topk_indices(D, k)                        # (n_test, k)
         neigh_labels = self.y_train[idx]
-    
         return self.vote_majority(neigh_labels)
 
     def score(self, k=None, weighted=False):
@@ -81,14 +79,10 @@ class KNN:
     def evaluate_over_k(self, k_values, plot=True, title=None):
         train_acc, test_acc = [], []
         for k in k_values:
-            # train accuracy (use train as both test and train)
             D_tr = self.eucl_dist_matrix(self.X_train, self.X_train)
-            # zero self-distance; but leave since we select k neighbors including itself
-            idx_tr = self.row_topk_indices(D_tr, k)
+            idx_tr = self.row_topk_indices(D_tr, k)              # bevat self-neighbor
             y_pred_tr = self.vote_majority(self.y_train[idx_tr])
             train_acc.append(np.mean(y_pred_tr == self.y_train))
-
-            # test accuracy
             test_acc.append(self.score(k=k, weighted=False))
 
         if plot:
@@ -106,8 +100,93 @@ class KNN:
         return np.array(train_acc), np.array(test_acc)
 
 
-    
+# ===================== k-NN REGRESSOR =====================
 
-    
+class KNNRegressor(KNN):
+    """k-NN regression: computes the (weighted) average of neighbor targets."""
+    def predict(self, X_test=None, k=None, weighted=False):
+        if X_test is None:
+            if self.X_test is None:
+                raise RuntimeError("No test set. Call test_train_split() first.")
+            X_test = self.X_test
+        if k is None:
+            k = self.k
 
-    
+        D = self.eucl_dist_matrix(X_test, self.X_train)          # (n_test, n_train)
+        idx = self.row_topk_indices(D, k)                        # (n_test, k)
+        neigh_targets = self.y_train[idx].astype(float)
+
+        if weighted:
+            eps = 1e-12
+            rows = np.arange(D.shape[0])[:, None]
+            w = 1.0 / (D[rows, idx] + eps)                       # inverse-distance weights
+            preds = (neigh_targets * w).sum(axis=1) / w.sum(axis=1)
+        else:
+            preds = neigh_targets.mean(axis=1)
+        return preds
+
+    def mse(self, y_true, y_pred):
+        """Mean Squared Error (MSE)."""
+        return float(((y_true - y_pred) ** 2).mean())
+
+    def r2(self, y_true, y_pred):
+        """Coefficient of determination R^2."""
+        ss_res = ((y_true - y_pred) ** 2).sum()
+        ss_tot = ((y_true - y_true.mean()) ** 2).sum()
+        return 1.0 - ss_res / ss_tot
+
+    def score(self, k=None, weighted=False):
+        """Return -MSE on the held-out test set (higher is better, for consistency with accuracy)."""
+        preds = self.predict(k=k, weighted=weighted)
+        return -self.mse(self.y_test, preds)
+
+    def evaluate_over_k(self, k_values, weighted=False, plot=True, title=None):
+        """
+        Evaluate performance for a list of k values.
+        Returns (train_mse, test_mse).
+        
+        Note: for training MSE we exclude the self-neighbor (set diagonal = inf),
+        otherwise k=1 would trivially give zero error.
+        """
+        train_mse, test_mse = [], []
+
+        # Train-vs-train distance matrix with diagonal excluded
+        D_tr = self.eucl_dist_matrix(self.X_train, self.X_train)
+        D_tr = D_tr.copy()
+        np.fill_diagonal(D_tr, np.inf)
+        ntr = D_tr.shape[0]
+        rows = np.arange(ntr)[:, None]
+
+        for k in k_values:
+            idx_tr = self.row_topk_indices(D_tr, k)
+            neigh_targets_tr = self.y_train[idx_tr].astype(float)
+
+            if weighted:
+                eps = 1e-12
+                w_tr = 1.0 / (D_tr[rows, idx_tr] + eps)
+                preds_tr = (neigh_targets_tr * w_tr).sum(axis=1) / w_tr.sum(axis=1)
+            else:
+                preds_tr = neigh_targets_tr.mean(axis=1)
+            train_mse.append(self.mse(self.y_train, preds_tr))
+
+            preds_te = self.predict(self.X_test, k=k, weighted=weighted)
+            test_mse.append(self.mse(self.y_test, preds_te))
+
+        train_mse = np.array(train_mse)
+        test_mse = np.array(test_mse)
+
+        if plot:
+            plt.figure(figsize=(7,4.5))
+            plt.plot(k_values, test_mse, marker='o', label='Test MSE')
+            plt.plot(k_values, train_mse, marker='s', label='Train MSE')
+            plt.xlabel('k'); plt.ylabel('Mean Squared Error (MSE)')
+            if title is None:
+                title = f'KNN regression MSE vs k (trainsplit={self.trainsplit})'
+            plt.title(title)
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+        return train_mse, test_mse
+
