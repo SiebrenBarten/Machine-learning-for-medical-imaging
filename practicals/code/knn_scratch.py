@@ -103,7 +103,7 @@ class KNN:
 # ===================== k-NN REGRESSOR =====================
 
 class KNNRegressor(KNN):
-    """k-NN regressie: neemt (gewogen) gemiddelde van buur-doelen."""
+    """k-NN regression: computes the (weighted) average of neighbor targets."""
     def predict(self, X_test=None, k=None, weighted=False):
         if X_test is None:
             if self.X_test is None:
@@ -119,33 +119,38 @@ class KNNRegressor(KNN):
         if weighted:
             eps = 1e-12
             rows = np.arange(D.shape[0])[:, None]
-            w = 1.0 / (D[rows, idx] + eps)                       # inverse afstand
+            w = 1.0 / (D[rows, idx] + eps)                       # inverse-distance weights
             preds = (neigh_targets * w).sum(axis=1) / w.sum(axis=1)
         else:
             preds = neigh_targets.mean(axis=1)
         return preds
 
     def mse(self, y_true, y_pred):
+        """Mean Squared Error (MSE)."""
         return float(((y_true - y_pred) ** 2).mean())
 
     def r2(self, y_true, y_pred):
+        """Coefficient of determination R^2."""
         ss_res = ((y_true - y_pred) ** 2).sum()
         ss_tot = ((y_true - y_true.mean()) ** 2).sum()
         return 1.0 - ss_res / ss_tot
 
     def score(self, k=None, weighted=False):
-        """Retourneert -MSE (zodat 'hoger is beter' vergelijkbaar blijft)."""
+        """Return -MSE on the held-out test set (higher is better, for consistency with accuracy)."""
         preds = self.predict(k=k, weighted=weighted)
         return -self.mse(self.y_test, preds)
 
     def evaluate_over_k(self, k_values, weighted=False, plot=True, title=None):
         """
-        Geeft (train_mse, test_mse) terug. 
-        Let op: voor train_mse sluiten we self-neighbor uit zodat k=1 niet triviaal 0 is.
+        Evaluate performance for a list of k values.
+        Returns (train_mse, test_mse).
+        
+        Note: for training MSE we exclude the self-neighbor (set diagonal = inf),
+        otherwise k=1 would trivially give zero error.
         """
         train_mse, test_mse = [], []
 
-        # train-vs-train afstandsmatrix en diag uitsluiten
+        # Train-vs-train distance matrix with diagonal excluded
         D_tr = self.eucl_dist_matrix(self.X_train, self.X_train)
         D_tr = D_tr.copy()
         np.fill_diagonal(D_tr, np.inf)
@@ -184,3 +189,4 @@ class KNNRegressor(KNN):
             plt.show()
 
         return train_mse, test_mse
+
