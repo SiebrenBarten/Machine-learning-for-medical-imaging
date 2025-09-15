@@ -134,8 +134,6 @@ def plot_knn_accuracy(X, y, k_values, trainsplit):
     
     print(f"Best k: {k_values[int(np.argmax(test_acc))]} (Test accuracy: {max(test_acc):.4f})")
         
-
-
 # ===================== k-NN REGRESSOR =====================
 
 class KNNRegressor(KNN):
@@ -149,7 +147,7 @@ class KNNRegressor(KNN):
             k = self.k
 
         D = self.eucl_dist_matrix(X_test, self.X_train)          # (n_test, n_train)
-        idx = self.row_topk_indices(D, k)                        # (n_test, k)
+        idx = self.select_k_neighbors(D, k)                        # (n_test, k)
         neigh_targets = self.y_train[idx].astype(float)
 
         if weighted:
@@ -194,7 +192,7 @@ class KNNRegressor(KNN):
         rows = np.arange(ntr)[:, None]
 
         for k in k_values:
-            idx_tr = self.row_topk_indices(D_tr, k)
+            idx_tr = self.select_k_neighbors(D_tr, k)
             neigh_targets_tr = self.y_train[idx_tr].astype(float)
 
             if weighted:
