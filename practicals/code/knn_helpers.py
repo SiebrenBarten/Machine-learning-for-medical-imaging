@@ -8,6 +8,8 @@ class KNN:
         self.k = k
         self.X = X  
         self.y = y
+        
+        # The trainsplit parameter specifies the fraction of data to be used for training (e.g., 0.8 means 80% train, 20% test)
         self.trainsplit = trainsplit
         
     def test_train_split(self):
@@ -17,9 +19,9 @@ class KNN:
         if self.trainsplit < 1.0:
             split_index = int(self.trainsplit * self.X.shape[0])
             self.X_train = self.X[:split_index, :]
-            self.y_train = self.y[:split_index].reshape(-1)  # ensure it's a 1D array
+            self.y_train = self.y[:split_index].reshape(-1)  # Ensure y is a 1D array
             self.X_test = self.X[split_index:, :]
-            self.y_test = self.y[split_index:].reshape(-1)  # ensure it's a 1D array
+            self.y_test = self.y[split_index:].reshape(-1)  # Ensure y is a 1D array
         else:
             raise ValueError("trainsplit should be a float between 0 and 1.")
         
@@ -37,10 +39,10 @@ class KNN:
         """
         Computes the Euclidean distance matrix between the X_test vector and the X_train vector. The result should be a matrix D of shape (X_test.shape[0], X_train.shape[0]).
         """
-        # compute the distance matrix D
+        # Compute the distance matrix D
         D = sp.spatial.distance.cdist(X_test, X_train, 'euclidean')
         
-        # check shape of the D matrix
+        # Check shape of the D matrix
         shape = D.shape
         if shape[0] != X_test.shape[0] or shape[1] != X_train.shape[0]:
             raise ValueError("The shape of the distance matrix is incorrect.")
@@ -50,14 +52,14 @@ class KNN:
         """
         Return indices of k smallest per row, sorted by distance.
         """
-        # depending on input k, the indices of the k smallest distances are are stored in a n_train x k matrix
+        # Depending on input k, the indices of the k smallest distances are are stored in a n_train x k matrix
         if k is None:
             k = self.k
             if k is None:
                 raise RuntimeError("k is not set. Provide k as function argument or set k as class attribute.")
         idx_mat = np.argpartition(D, kth=k-1, axis=1)[:, :k]
         
-        # sort the k indices by distance
+        # Sort the k indices by distance
         rows = np.arange(D.shape[0])[:, None]
         dist_mat = D[rows, idx_mat]
         order_in_k = np.argsort(dist_mat, axis=1)
@@ -79,6 +81,9 @@ class KNN:
         return pred_array
     
     def vote_mean(self, neigh_targets):
+        """
+        For regression: return the mean of the neighbor targets.
+        """
         return neigh_targets.mean(axis=1, keepdims=True)
 
     def predict(self, X_test=None, k=None, classification=True):
@@ -131,13 +136,15 @@ class KNN:
         preds = self.predict(k=k)
         return self.mse(self.y_test, preds)
     
-def plot_knn_stats(X, y, k_values, trainsplit, metric, normalize=False, plot=False):
+def plot_knn_stats(X, y, k_values, trainsplit, metric, normalize=True, plot=False):
     """
     Plot k-NN stats for a range of k values.
     """
     
     knn = KNN(X, y, trainsplit)
     knn.test_train_split()
+    
+    # Optionally normalize the data (this is important for distance-based methods like k-NN classification but not for regression)
     if normalize:
         knn.normalize_train_test()
 
