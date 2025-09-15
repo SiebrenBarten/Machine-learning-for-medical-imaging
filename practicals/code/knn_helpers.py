@@ -220,3 +220,41 @@ def plot_knn_stats(X, y, k_values, trainsplit, metric, normalize=True, plot=Fals
 
         return train_mse, test_mse
 
+
+class RegressionMetrics:
+        def __init__(self, y_true, y_pred):
+            self.y_true = np.array(y_true)
+            self.y_pred = np.array(y_pred)
+
+        def mse(self):
+            """
+            Mean Squared Error
+            """
+            return np.mean((self.y_true - self.y_pred) ** 2)
+
+        def r2_score(self):
+            """
+            R2 score (coefficient of determination)
+            """
+            ss_res = np.sum((self.y_true - self.y_pred) ** 2)
+            ss_tot = np.sum((self.y_true - np.mean(self.y_true)) ** 2)
+            return 1 - ss_res / ss_tot if ss_tot != 0 else 0.0
+
+        def roc_curve_numpy(y_true, y_score):
+            thresholds = np.unique(y_score)[::-1]
+            tpr = []
+            fpr = []
+            for thresh in thresholds:
+                y_pred = (y_score >= thresh).astype(int)
+                tp = np.sum((y_pred == 1) & (y_true == 1))
+                fp = np.sum((y_pred == 1) & (y_true == 0))
+                fn = np.sum((y_pred == 0) & (y_true == 1))
+                tn = np.sum((y_pred == 0) & (y_true == 0))
+                tpr.append(tp / (tp + fn) if (tp + fn) > 0 else 0)
+                fpr.append(fp / (fp + tn) if (fp + tn) > 0 else 0)
+            return np.array(fpr), np.array(tpr), thresholds
+
+        def auc_numpy(fpr, tpr):
+            order = np.argsort(fpr)
+            return np.trapz(tpr[order], fpr[order])
+
