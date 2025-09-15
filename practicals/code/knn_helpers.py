@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 
 class KNN:
-    def __init__(self, X, y, k, trainsplit):
+    def __init__(self, X, y, trainsplit, k=None):
         self.k = k
         self.X = X  
         self.y = y
@@ -46,11 +46,15 @@ class KNN:
             raise ValueError("The shape of the distance matrix is incorrect.")
         return D
     
-    def select_k_neighbors(self, D, k):
+    def select_k_neighbors(self, D, k=None):
         """
         Return indices of k smallest per row, sorted by distance.
         """
         # depending on input k, the indices of the k smallest distances are are stored in a n_train x k matrix
+        if k is None:
+            k = self.k
+            if k is None:
+                raise RuntimeError("k is not set. Provide k as function argument or set k as class attribute.")
         idx_mat = np.argpartition(D, kth=k-1, axis=1)[:, :k]
         
         # sort the k indices by distance
@@ -70,7 +74,7 @@ class KNN:
         # for each row, count the occurrences of each class (in this case 1 or 0) and return the class with the highest count
         pred_array = np.empty(n_rows, dtype=np.int64)
         for i in range(n_rows):
-            pred_array[i] = np.bincount(neigh_labels[i], minlength=n_classes).argmax()
+            pred_array[i] = np.bincount(neigh_labels[i].astype(int), minlength=n_classes).argmax()
         
         return pred_array
 
@@ -87,6 +91,8 @@ class KNN:
         # add option to predict with arbitrary k
         if k is None:
             k = self.k
+            if k is None:
+                raise RuntimeError("k is not set. Provide k as function argument or set k as class attribute.")
 
         # compute distance matrix
         D = self.eucl_dist_matrix(X_test, self.X_train)
@@ -101,38 +107,105 @@ class KNN:
         y_pred = self.vote_majority(neigh_labels)
         
         return y_pred
+    
+    def mse(self, y_true, y_pred):
+        """Mean Squared Error (MSE)."""
+        return float(((y_true - y_pred) ** 2).mean())
 
+    def r2(self, y_true, y_pred):
+        """Coefficient of determination R^2."""
+        ss_res = ((y_true - y_pred) ** 2).sum()
+        ss_tot = ((y_true - y_true.mean()) ** 2).sum()
+        return 1.0 - ss_res / ss_tot
+    
     def score(self, k=None):
         """
         Accuracy on the held-out test set.
         """
         preds = self.predict(k=k)
-        return np.mean(preds == self.y_test)
+        return self.mse(self.y_test, preds)
     
-def plot_knn_accuracy(X, y, k_values, trainsplit):
-    train_acc, test_acc = [], []
-
-    for k in k_values:
-        # Create a new KNN instance for each k to avoid side effects
-        knn = KNN(X, y, k, trainsplit)
-        knn.test_train_split()
-        knn.normalize_train_test()
-        train_preds = knn.predict(knn.X_train, k)
-        test_preds = knn.predict(knn.X_test, k)
-        train_acc.append(np.mean(train_preds == knn.y_train))
-        test_acc.append(np.mean(test_preds == knn.y_test))
-
-    plt.figure(figsize=(8, 5))
-    plt.plot(k_values, train_acc, marker='o', label='Train Accuracy')
-    plt.plot(k_values, test_acc, marker='s', label='Test Accuracy')
-    plt.xlabel('k')
-    plt.ylabel('Accuracy')
-    plt.title('k-NN Accuracy for different k')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+def plot_knn_stats(X, y, k_values, trainsplit, metric, plot=False):
+    """
+    Plot k-NN stats for a range of k values.
+    """
     
-    print(f"Best k: {k_values[int(np.argmax(test_acc))]} (Test accuracy: {max(test_acc):.4f})")
+    knn = KNN(X, y, trainsplit)
+    knn.test_train_split()
+    knn.normalize_train_test()
+
+    if metric == 'accuracy':
+        train_acc, test_acc = [], []
+        for k in k_values:
+            # Create a new KNN instance for each k to avoid side effects
+            train_preds = knn.predict(knn.X_train, k)
+            test_preds = knn.predict(knn.X_test, k)
+            train_acc.append(np.mean(train_preds == knn.y_train))
+            test_acc.append(np.mean(test_preds == knn.y_test))
+            
+        if plot:
+            # Plot accuracy vs k
+            plt.figure(figsize=(8, 5))
+            plt.plot(k_values, train_acc, marker='o', label='Train Accuracy')
+            plt.plot(k_values, test_acc, marker='s', label='Test Accuracy')
+            
+            # Plot a vertical line at the best k
+            best_k = k_values[int(np.argmax(test_acc))]
+            plt.axvline(x=best_k, color='r', linestyle='--', label=f'Best k = {best_k}')
+            
+            # Set labels and title
+            plt.xlabel('k')
+            plt.ylabel('Accuracy')
+            plt.title('k-NN Accuracy for different k')
+            plt.legend()
+            plt.grid(True)
+            plt.show()
+        
+    elif metric == 'mse':
+        # Train-vs-train distance matrix with diagonal excluded
+        D_tr = knn.eucl_dist_matrix(knn.X_train, knn.X_train)
+        D_tr = D_tr.copy()
+        np.fill_diagonal(D_tr, np.inf)
+        ntr = D_tr.shape[0]
+
+        train_mse, test_mse = [], []
+        for k in k_values:
+            idx_tr = knn.select_k_neighbors(D_tr, k)
+            neigh_targets_tr = knn.y_train[idx_tr].astype(float)
+
+            preds_tr = neigh_targets_tr.mean(axis=1)
+            train_mse.append(knn.mse(knn.y_train, preds_tr))
+
+            # For test set, use the same regression logic (mean of neighbor targets)
+            D_te = knn.eucl_dist_matrix(knn.X_test, knn.X_train)
+            idx_te = knn.select_k_neighbors(D_te, k)
+            neigh_targets_te = knn.y_train[idx_te].astype(float)
+            preds_te = neigh_targets_te.mean(axis=1)
+            test_mse.append(knn.mse(knn.y_test, preds_te))
+
+        train_mse = np.array(train_mse)
+        test_mse = np.array(test_mse)
+
+        if plot:
+            # Plot MSE vs k
+            plt.figure(figsize=(8,5))
+            plt.plot(k_values, test_mse, marker='o', label='Test MSE')
+            plt.plot(k_values, train_mse, marker='s', label='Train MSE')
+            
+            # Plot a vertical line at the best k
+            best_k = k_values[int(np.argmin(test_mse))]
+            plt.axvline(x=best_k, color='r', linestyle='--', label=f'Best k = {best_k}')
+            
+            # Set labels and title
+            plt.xlabel('k'); plt.ylabel('Mean Squared Error (MSE)')
+            plt.title(f'KNN regression MSE vs k (trainsplit={trainsplit})')
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.legend()
+            plt.tight_layout()
+            plt.show()
+
+        return train_mse, test_mse
+
         
 # ===================== k-NN REGRESSOR =====================
 
