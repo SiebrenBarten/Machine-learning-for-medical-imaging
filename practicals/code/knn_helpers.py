@@ -77,8 +77,11 @@ class KNN:
             pred_array[i] = np.bincount(neigh_labels[i].astype(int), minlength=n_classes).argmax()
         
         return pred_array
+    
+    def vote_mean(self, neigh_targets):
+        return neigh_targets.mean(axis=1, keepdims=True)
 
-    def predict(self, X_test=None, k=None):
+    def predict(self, X_test=None, k=None, classification=True):
         """
         Predict labels for X_test (defaults to held-out test set).
         """
@@ -104,7 +107,10 @@ class KNN:
         neigh_labels = self.y_train[idx]
 
         # vote for the most common class among the k neighbors
-        y_pred = self.vote_majority(neigh_labels)
+        if classification:
+            y_pred = self.vote_majority(neigh_labels)
+        else:
+            y_pred = self.vote_mean(neigh_labels)
         
         return y_pred
     
@@ -125,14 +131,15 @@ class KNN:
         preds = self.predict(k=k)
         return self.mse(self.y_test, preds)
     
-def plot_knn_stats(X, y, k_values, trainsplit, metric, plot=False):
+def plot_knn_stats(X, y, k_values, trainsplit, metric, normalize=False, plot=False):
     """
     Plot k-NN stats for a range of k values.
     """
     
     knn = KNN(X, y, trainsplit)
     knn.test_train_split()
-    knn.normalize_train_test()
+    if normalize:
+        knn.normalize_train_test()
 
     if metric == 'accuracy':
         train_acc, test_acc = [], []
