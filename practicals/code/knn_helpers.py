@@ -84,7 +84,7 @@ class KNN:
         """
         For regression: return the mean of the neighbor targets.
         """
-        return neigh_targets.mean(axis=1, keepdims=True)
+        return neigh_targets.mean(axis=1)
 
     def predict(self, X_test=None, k=None, classification=True):
         """
@@ -228,33 +228,46 @@ class RegressionMetrics:
 
         def mse(self):
             """
-            Mean Squared Error
+            Calculates the Mean Squared Error (MSE)
             """
             return np.mean((self.y_true - self.y_pred) ** 2)
 
         def r2_score(self):
             """
-            R2 score (coefficient of determination)
+            Calculates the R2 score (coefficient of determination)
             """
             ss_res = np.sum((self.y_true - self.y_pred) ** 2)
             ss_tot = np.sum((self.y_true - np.mean(self.y_true)) ** 2)
+            
             return 1 - ss_res / ss_tot if ss_tot != 0 else 0.0
 
         def roc_curve_numpy(y_true, y_score):
+            """
+            Computes the Receiver Operating Characteristic (ROC) curve.
+            """
+            # Sort thresholds in descending order (from high to low)
             thresholds = np.unique(y_score)[::-1]
-            tpr = []
-            fpr = []
+            tpr = []  # True Positive Rate
+            fpr = []  # False Positive Rate
+
             for thresh in thresholds:
-                y_pred = (y_score >= thresh).astype(int)
-                tp = np.sum((y_pred == 1) & (y_true == 1))
-                fp = np.sum((y_pred == 1) & (y_true == 0))
-                fn = np.sum((y_pred == 0) & (y_true == 1))
-                tn = np.sum((y_pred == 0) & (y_true == 0))
+                y_pred = (y_score >= thresh).astype(int)  # binary predictions
+                tp = np.sum((y_pred == 1) & (y_true == 1))  # true positives
+                fp = np.sum((y_pred == 1) & (y_true == 0))  # false positives
+                fn = np.sum((y_pred == 0) & (y_true == 1))  # false negatives
+                tn = np.sum((y_pred == 0) & (y_true == 0))  # true negatives
+                
+                # Avoid division by zero
                 tpr.append(tp / (tp + fn) if (tp + fn) > 0 else 0)
                 fpr.append(fp / (fp + tn) if (fp + tn) > 0 else 0)
             return np.array(fpr), np.array(tpr), thresholds
 
         def auc_numpy(fpr, tpr):
+            """
+            Computes the Area Under the Curve (AUC) using the trapezoidal rule.
+            """
+            # Sort points based on FPR
             order = np.argsort(fpr)
+            
             return np.trapz(tpr[order], fpr[order])
 
