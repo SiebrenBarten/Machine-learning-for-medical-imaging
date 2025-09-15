@@ -2,6 +2,7 @@ import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
 
+
 class KNN:
     def __init__(self, X, y, k, trainsplit):
         self.k = k
@@ -10,17 +11,22 @@ class KNN:
         self.trainsplit = trainsplit
         
     def test_train_split(self):
-        """Splits the dataset into training and testing sets based on the trainsplit ratio."""
+        """
+        Splits the dataset into training and testing sets based on the trainsplit ratio. The train and test data are stored in self.X_train, self.y_train, self.X_test, self.y_test.
+        """
         if self.trainsplit < 1.0:
             split_index = int(self.trainsplit * self.X.shape[0])
             self.X_train = self.X[:split_index, :]
-            self.y_train = self.y[:split_index].reshape(-1)  # Ensure 1D
+            self.y_train = self.y[:split_index].reshape(-1)  # ensure it's a 1D array
             self.X_test = self.X[split_index:, :]
-            self.y_test = self.y[split_index:].reshape(-1)   # Ensure 1D
+            self.y_test = self.y[split_index:].reshape(-1)  # ensure it's a 1D array
         else:
             raise ValueError("trainsplit should be a float between 0 and 1.")
         
     def normalize_train_test(self):
+        """
+        Calibrates the training and test set to have zero mean and unit variance. Formula: X_normalized = (X - mu) / sigma
+        """
         mu = self.X_train.mean(axis=0)
         sigma = self.X_train.std(axis=0, ddof=0)
         sigma[sigma == 0.0] = 1.0
@@ -29,75 +35,105 @@ class KNN:
             
     def eucl_dist_matrix(self, X_test, X_train):
         """
-        Computes the Euclidean distance matrix between two sets of vectors A and B. The result
-        should be a matrix of shape (A.shape[0], B.shape[0]).
+        Computes the Euclidean distance matrix between the X_test vector and the X_train vector. The result should be a matrix D of shape (X_test.shape[0], X_train.shape[0]).
         """
+        # compute the distance matrix D
         D = sp.spatial.distance.cdist(X_test, X_train, 'euclidean')
+        
+        # check shape of the D matrix
         shape = D.shape
         if shape[0] != X_test.shape[0] or shape[1] != X_train.shape[0]:
             raise ValueError("The shape of the distance matrix is incorrect.")
         return D
     
-    def row_topk_indices(self, D, k):
-        """Return indices of k smallest per row, sorted by distance."""
-        idx_part = np.argpartition(D, kth=k-1, axis=1)[:, :k]      # (n_test, k)
+    def select_k_neighbors(self, D, k):
+        """
+        Return indices of k smallest per row, sorted by distance.
+        """
+        # depending on input k, the indices of the k smallest distances are are stored in a n_train x k matrix
+        idx_mat = np.argpartition(D, kth=k-1, axis=1)[:, :k]
+        
+        # sort the k indices by distance
         rows = np.arange(D.shape[0])[:, None]
-        d_small = D[rows, idx_part]
-        order_in_k = np.argsort(d_small, axis=1)
-        idx_sorted = idx_part[rows, order_in_k]
+        dist_mat = D[rows, idx_mat]
+        order_in_k = np.argsort(dist_mat, axis=1)
+        idx_sorted = idx_mat[rows, order_in_k]
         return idx_sorted
 
-    # --------------------- voting & predict (classificatie) ---------------------
     def vote_majority(self, neigh_labels):
-        """neigh_labels: (n_test, k) -> (n_test,)"""
-        n = neigh_labels.shape[0]
-        C = int(neigh_labels.max()) + 1
-        out = np.empty(n, dtype=np.int64)
-        for i in range(n):
-            out[i] = np.bincount(neigh_labels[i], minlength=C).argmax()
-        return out
+        """
+        Vote for the most common class among the k neighbors. Note that this works optimal if k is odd.
+        """
+        n_rows = neigh_labels.shape[0]
+        n_classes = int(neigh_labels.max()) + 1
+        
+        # for each row, count the occurrences of each class (in this case 1 or 0) and return the class with the highest count
+        pred_array = np.empty(n_rows, dtype=np.int64)
+        for i in range(n_rows):
+            pred_array[i] = np.bincount(neigh_labels[i], minlength=n_classes).argmax()
+        
+        return pred_array
 
-    def predict(self, X_test=None, k=None, weighted=False):
-        """Predict labels for X_test (defaults to held-out test set)."""
+    def predict(self, X_test=None, k=None):
+        """
+        Predict labels for X_test (defaults to held-out test set).
+        """
+        # add option to predict on arbitrary data X_test
         if X_test is None:
             if self.X_test is None:
                 raise RuntimeError("No test set. Call test_train_split() first.")
             X_test = self.X_test
+        
+        # add option to predict with arbitrary k
         if k is None:
             k = self.k
 
-        D = self.eucl_dist_matrix(X_test, self.X_train)          # (n_test, n_train)
-        idx = self.row_topk_indices(D, k)                        # (n_test, k)
+        # compute distance matrix
+        D = self.eucl_dist_matrix(X_test, self.X_train)
+        
+        # find the k nearest neighbors for every test sample
+        idx = self.select_k_neighbors(D, k)
+        
+        # get the labels of the training samples of the k nearest neighbors
         neigh_labels = self.y_train[idx]
-        return self.vote_majority(neigh_labels)
 
-    def score(self, k=None, weighted=False):
-        """Accuracy on the held-out test set."""
-        preds = self.predict(k=k, weighted=weighted)
+        # vote for the most common class among the k neighbors
+        y_pred = self.vote_majority(neigh_labels)
+        
+        return y_pred
+
+    def score(self, k=None):
+        """
+        Accuracy on the held-out test set.
+        """
+        preds = self.predict(k=k)
         return np.mean(preds == self.y_test)
     
-    def evaluate_over_k(self, k_values, plot=True, title=None):
-        train_acc, test_acc = [], []
-        for k in k_values:
-            D_tr = self.eucl_dist_matrix(self.X_train, self.X_train)
-            idx_tr = self.row_topk_indices(D_tr, k)              # bevat self-neighbor
-            y_pred_tr = self.vote_majority(self.y_train[idx_tr])
-            train_acc.append(np.mean(y_pred_tr == self.y_train))
-            test_acc.append(self.score(k=k, weighted=False))
+def plot_knn_accuracy(X, y, k_values, trainsplit):
+    train_acc, test_acc = [], []
 
-        if plot:
-            plt.figure(figsize=(7,4.5))
-            plt.plot(k_values, test_acc, marker='o', label='Test accuracy')
-            plt.plot(k_values, train_acc, marker='s', label='Train accuracy')
-            plt.xlabel('k'); plt.ylabel('Accuracy')
-            if title is None:
-                title = f'KNN accuracy vs k (trainsplit={self.trainsplit})'
-            plt.title(title)
-            plt.grid(True, linestyle='--', alpha=0.5)
-            plt.legend()
-            plt.tight_layout()
-            plt.show()
-        return np.array(train_acc), np.array(test_acc)
+    for k in k_values:
+        # Create a new KNN instance for each k to avoid side effects
+        knn = KNN(X, y, k, trainsplit)
+        knn.test_train_split()
+        knn.normalize_train_test()
+        train_preds = knn.predict(knn.X_train, k)
+        test_preds = knn.predict(knn.X_test, k)
+        train_acc.append(np.mean(train_preds == knn.y_train))
+        test_acc.append(np.mean(test_preds == knn.y_test))
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(k_values, train_acc, marker='o', label='Train Accuracy')
+    plt.plot(k_values, test_acc, marker='s', label='Test Accuracy')
+    plt.xlabel('k')
+    plt.ylabel('Accuracy')
+    plt.title('k-NN Accuracy for different k')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+    
+    print(f"Best k: {k_values[int(np.argmax(test_acc))]} (Test accuracy: {max(test_acc):.4f})")
+        
 
 
 # ===================== k-NN REGRESSOR =====================
